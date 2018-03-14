@@ -1,0 +1,9 @@
+server.port=10010
+spring.application.name=config-server
+
+spring.cloud.config.server.git.uri=https://github.com/lomoCgx/spring-cloud-learn/
+spring.cloud.config.server.git.searchPaths=respo
+spring.cloud.config.label=master
+#spring.cloud.config.server.git.username=
+#spring.cloud.config.server.git.password=
+#eureka.client.service-url.defaultZone=http://cgx:cgx123@peer1:10001/eureka/,http://cgx:cgx123@peer2:10002/eureka/

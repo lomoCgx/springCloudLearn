@@ -1,0 +1,19 @@
+一、Feign简介
+Feign是一个声明式的伪Http客户端，它使得写Http客户端变得更简单。使用Feign，只需要创建一个接口并注解。它具有可插拔的注解特性，可使用Feign 注解和JAX-RS注解。
+Feign支持可插拔的编码器和解码器。Feign默认集成了Ribbon，并和Eureka结合，默认实现了负载均衡的效果。
+
+简而言之：
+Feign 采用的是基于接口的注解
+Feign 整合了ribbon
+
+2.配置
+          <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-feign</artifactId>
+        </dependency>
+  然后，在启动类上加入注解，开启feign，加上@EnableFeignClients注解开启Feign的功能
+  
+  新建个接口，然后添加注解 通过@ FeignClient（“服务名”），来指定调用哪个服务。比如在代码中调用了service-hi服务的“/hi”接口
+  
+  
+

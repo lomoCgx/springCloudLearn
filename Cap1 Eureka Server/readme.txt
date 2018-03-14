@@ -1,0 +1,39 @@
+服务注册端
+1.注册中心需要的maven包
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-netflix-eureka-server</artifactId>
+		</dependency>
+
+2.application.xml文件配置信息
+#spring.application.name=spring-cloud-eureka
+#server.port=8000
+#eureka.client.register-with-eureka=false
+#eureka.client.fetch-registry=false
+#eureka.client.serviceUrl.defaultZone=http://localhost:${server.port}/eureka/
+  ● eureka.client.register-with-eureka ：表示是否将自己注册到Eureka Server，默认为true。
+  ● eureka.client.fetch-registry ：表示是否从Eureka Server获取注册信息，默认为true。
+  ● eureka.client.serviceUrl.defaultZone ：设置与Eureka Server交互的地址，查询服务和注册服务都需要依赖这个地址。默认是http://localhost:8761/eureka ；多个地址可使用 , 分隔。
+3.@EnableEurekaServer 开始注解配置
+
+
+服务客户端
+1.要注册的客户端的maven包
+<dependency>
+	<groupId>org.springframework.cloud</groupId>
+	<artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+</dependency>
+2.application.xml文件配置信息
+spring.application.name=spring-cloud-producer
+server.port=9000
+eureka.client.serviceUrl.defaultZone=http://localhost:8000/eureka/
+3.@EnableDiscoveryClient 开始注解，注册到到服务端
+
+
+
+服务注册端集群配置
+主要是在application.xml进行配置
+spring.application.name=eureka-register-cluster
+server.port=11004
+eureka.instance.hostname=peer4
+eureka.client.service-url.defaultZone=http://peer5:11005/eureka/,http://peer6:11006/eureka/

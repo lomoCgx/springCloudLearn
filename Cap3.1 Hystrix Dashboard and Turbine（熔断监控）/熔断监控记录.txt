@@ -1,0 +1,59 @@
+一、介绍
+Hystrix-dashboard是一款针对Hystrix进行实时监控的工具，通过Hystrix Dashboard我们可以在直观地看到各Hystrix Command的请求响应时间, 请求成功率等数据。
+但是只使用Hystrix Dashboard的话, 你只能看到单个应用内的服务信息, 这明显不够。
+我们需要一个工具能让我们汇总系统内多个服务的数据并显示到Hystrix Dashboard上, 这个工具就是Turbine.
+
+配置：
+			<dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-hystrix-dashboard</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-hystrix</artifactId>
+        </dependency>
+        以上三个依赖缺一不可。
+        
+        在程序的入口ServiceHiApplication类，加上@EnableHystrix注解开启断路器，这个是必须的，并且需要在程序中声明断路点HystrixCommand；
+        加上@EnableHystrixDashboard注解，开启HystrixDashboard
+        
+        访问请求 http://localhost:8762/hystrix.stream，可以看到数据
+        locahost:8762/hystrix 可以看到界面
+        
+Turbine
+配置
+	    <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-starter-turbine</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-netflix-turbine</artifactId>
+    </dependency>
+
+
+spring.application.name=hystrix-dashboard-turbine
+server.port=8001
+turbine.appConfig=node01,node02
+turbine.aggregator.clusterConfig= default
+turbine.clusterNameExpression= new String("default")
+
+eureka.client.serviceUrl.defaultZone=http://localhost:8000/eureka/
+  ● turbine.appConfig ：配置Eureka中的serviceId列表，表明监控哪些服务
+  ● turbine.aggregator.clusterConfig ：指定聚合哪些集群，多个使用","分割，默认为default。可使用http://.../turbine.stream?cluster={clusterConfig之一}访问
+  ● turbine.clusterNameExpression ： 1. clusterNameExpression指定集群名称，默认表达式appName；此时：turbine.aggregator.clusterConfig需要配置想要监控的应用名称；
+  2. 当clusterNameExpression: default时，turbine.aggregator.clusterConfig可以不写，因为默认就是default；
+  3. 当clusterNameExpression: metadata['cluster']时，假设想要监控的应用配置了eureka.instance.metadata-map.cluster: ABC，则需要配置，
+  同时turbine.aggregator.clusterConfig: ABC
+  
+  启动类添加@EnableTurbine，激活对Turbine的支持
+   http://localhost:8001/turbine.stream
+   
+   并且会不断刷新以获取实时的监控数据，说明和单个的监控类似，返回监控项目的信息。
+   进行图形化监控查看，输入：http://localhost:8001/hystrix，返回酷酷的小熊界面，
+   输入： http://localhost:8001/turbine.stream，然后点击 Monitor Stream ,可以看到出现了俩个监控列表

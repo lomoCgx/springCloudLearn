@@ -1,0 +1,96 @@
+一、简介
+在分布式系统中，由于服务数量巨多，为了方便服务配置文件统一管理，实时更新，所以需要分布式配置中心组件。
+在Spring Cloud中，有分布式配置中心组件spring cloud config ，它支持配置服务放在配置服务的内存中（即本地），
+也支持放在远程Git仓库中。在spring cloud config 组件中，分两个角色，一是config server，二是config client。
+
+config server 
+	文件配置
+	        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-config-server</artifactId>
+        </dependency>
+  在程序的入口Application类加上@EnableConfigServer注解开启配置服务器的功能
+	application.properties
+	需要在程序的配置文件application.properties文件配置以下
+	spring.application.name=config-server
+	server.port=8888
+	
+	#配置git仓库地址
+	spring.cloud.config.server.git.uri=https://github.com/forezp/SpringcloudConfig/
+	#配置仓库路径
+	spring.cloud.config.server.git.searchPaths=respo
+	#配置仓库的分支
+	spring.cloud.config.label=master
+	#访问git仓库的用户名
+	spring.cloud.config.server.git.username=your username
+	#访问git仓库的用户密码
+	spring.cloud.config.server.git.password=your password
+	#如果Git仓库为公开仓库，可以不填写用户名和密码，如果是私有仓库需要填写，本例子是公开仓库，放心使用。
+	
+	证明配置服务中心可以从远程程序获取配置信息。
+		http请求地址和资源文件映射如下:
+		/{application}/{profile}[/{label}]
+		/{application}-{profile}.yml
+		/{label}/{application}-{profile}.yml
+		/{application}-{profile}.properties
+		/{label}/{application}-{profile}.properties
+		
+		按上图的解释  比如文件名为：aa-bb-cc.properties
+		// 开发环境
+		neo-config-dev.properties
+		// 测试环境
+		neo-config-test.properties
+		// 生产环境
+		neo-config-pro.properties
+		以neo-config-dev.properties为例子，它的application是neo-config，profile是dev。client会根据填写的参数来选择读取对应的配置。label:分支
+		  ● /{application}/{profile}[/{label}]                     /neo-config/dev/master
+		  ● /{application}-{profile}.yml                            /neo-config-dev.yml
+		  ● /{label}/{application}-{profile}.yml                 /master/neo-config-dev.yml
+		  ● /{application}-{profile}.properties                 /neo-config-dev.properties
+		  ● /{label}/{application}-{profile}.properties      /master/neo-config-dev.properties
+		注意：如果在目录下存在 application.properties      文件，当路径${application}或${profile}写错时，默认访问application.properties
+
+		http://127.0.0.1:15010/bus/refersh
+		curl -X POST http://localhost:15010//bus/refresh -d 'destination=**'
+
+		客户端需要在对应的controller加上注解@RefreshScope
+		
+config client
+		配置
+		        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-config</artifactId>
+        </dependency>
+		其配置文件bootstrap.properties
+		spring.application.name=config-client
+		spring.cloud.config.label=master
+		spring.cloud.config.profile=dev
+		spring.cloud.config.uri= http://localhost:8888/
+		server.port=8881
+		
+		如果利用注册中心配置，则无需配置spring.cloud.config.uri，开启如下配置：
+		spring.cloud.config.discovery.enabled 是从配置中心读取文件。
+		spring.cloud.config.discovery.serviceId 配置中心的servieId，即服务名。
+		这时发现，在读取配置文件不再写ip地址，而是服务名，这时如果配置服务部署多份，通过负载均衡，从而高可用。
+		
+		
+消息总线(Spring Cloud Bus)
+Spring Cloud Bus 将分布式的节点用轻量的消息代理连接起来。它可以用于广播配置文件的更改或者服务之间的通讯，也可以用于监控。
+本文要讲述的是用Spring Cloud Bus实现通知微服务架构的配置文件的更改。意思是：当配置文件修改的时候，可以及时的配置到各个微服务。
+配置：
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-bus-amqp</artifactId>
+        </dependency>
+
+在配置文件application.properties中加上RabbitMq的配置，包括RabbitMq的地址、端口，用户名、密码，代码如下：
+spring.rabbitmq.host=localhost
+spring.rabbitmq.port=5672
+# spring.rabbitmq.username=
+# spring.rabbitmq.password=
+
+然后，当我们修改了git上面的配置文件的时候，只需发送post请求，http://localhost:8881/bus/refresh，你会发现config-client会重新读取配置文件
+另外，/bus/refresh接口可以指定服务，即使用”destination”参数，比如 “/bus/refresh?destination=customers:**” 即刷新服务名为customers的所有服务，不管ip。
+可以让server-config也配置消息总线，此时，只需向server-config发送post请求，对应的config客户端就会刷新，重新读取配置。
+
+#spring.cloud.bus.trace.enabled=true，如果那样做的话，那么Spring Boot TraceRepository（如果存在）将显示每个服务实例发送的所有事件和所有的ack,

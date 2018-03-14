@@ -1,0 +1,60 @@
+1.Spring Cloud Ribbon 是什么
+	Spring Cloud Ribbon 是一个客户端负载均衡的组件，主要提供客户侧的软件负载均衡算法
+	
+	负载均衡就是分发请求流量到不同的服务器，负载均衡分为两种:
+			服务端负载：服务器端负载均衡是对客户透明的,用户请求到LB服务器,真正的Application服务器是由LB服务器分发控制的，目前的实现有软件(ngnix,HA Proxy等)和硬件(F5等).
+			客户端负载：是客户端软件的一部分,客户端获知到可用的服务器列表按一定的均衡策略,分发请求.
+			
+			客户端软负载核心：
+				服务发现，发现依赖服务的列表
+				服务选择规则，在多个服务中如何选择一个有效服务
+				服务监听，检测失效的服务，高效剔除失效服务
+
+
+2、Ribbon 功能介绍
+	2.1、主要组件
+		ServerList 
+			用于获取地址列表。它既可以是静态的(提供一组固定的地址)，也可以是动态的(从注册中心中定期查询地址列表)。
+
+		ServerListFilter
+			仅当使用动态ServerList时使用，用于在原始的服务列表中使用一定策略过虑掉一部分地址。
+
+		IRule
+			选择一个最终的服务地址作为LB结果。选择策略有轮询、根据响应时间加权、断路器(当Hystrix可用时)等。
+
+		Ribbon在工作时首选会通过ServerList来获取所有可用的服务列表，然后通过ServerListFilter过虑掉一部分地址，最后在剩下的地址中通过IRule选择出一台服务器作为最终结果。
+
+	2.2、负载均衡策略
+			AbstractLoadBalancerRule：负载均衡策略的抽象类，在该抽象类中定义了负载均衡器ILoadBalancer对象，该对象能够在具体实现选择服务策略时，获取到一些负载均衡器中维护的信息来作为分配依据，
+			并以此设计一些算法来实现针对特定场景的高效策略。
+
+				RandomRule：随机策略，从服务实例清单中随机选择一个服务实例。获得可用实例列表upList和所有实例列表allList，并通过rand.nextInt(serverCount)函数来获取一个随机数，
+				并将该随机数作为upList的索引值来返回具体实例。
+				
+				RoundRobinRule：轮询策略，按照线性轮询的方式依次选择每个服务实例。通过AtomicInteger nextServerCyclicCounter对象实现，每次进行实例选择时通过调用incrementAndGetModulo函数实现递增。
+
+				RetryRule：重试策略，具备重试机制的实例选择。内部定义了RoundRobinRule，并实现了对RoundRobinRule进行反复尝试的策略，若期间能够选择到具体的服务实例就返回，
+				若选择不到就根据设置的尝试结束时间为阈值，当超过该阈值后就返回null。
+
+				WeightedResponseTimeRule：权重策略，根据实例的运行情况来计算权重，并根据权重来挑选实例，以达到更优的分配效果。通过定时任务为每个服务进行权重计算，
+				平均响应时间小的权重区间（总平均响应时间-实例平均响应时间）就大，实力选择根据权重范围随机选择，落在哪个区间则选择哪个实例。
+
+				BestAvailableRule：最佳策略，通过遍历负载均衡器中维护的所有服务实例，会过滤掉故障的实例，并找出并发请求数最小的一个，选出最空闲的实例。
+
+				AvailabilityFilteringRule：可用过滤策略：先过滤出故障的或并发请求大于阈值一部分服务实例，然后再以线性轮询的方式从过滤后的实例清单中选出一个。
+
+				ZoneAvoidanceRule：区域感知策略：使用主过滤条件（区域负载器，选择最优区域）对所有实例过滤并返回过滤后的实例清单，依次使用次过滤条件列表中的过滤条件对主过滤条件的结果进行过滤，
+				判断最小过滤数（默认1）和最小过滤百分比（默认0），满足条件则使用RoundRobinRule选择实例。
+
+3、使用Ribbon
+   	1.在客户端配置pom依赖
+   			<dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-ribbon</artifactId>
+        </dependency>
+     application.xml配置
+     spring.application.name=eureka-consumer-robbin
+		 server.port=11003
+		 eureka.client.service-url.defaultZone=http://localhost:11001/eureka/
+		
+		

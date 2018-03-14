@@ -1,0 +1,226 @@
+过滤器中抛出异常的问题
+	首先，我们可以来看看默认情况下，过滤器中抛出异常Spring Cloud Zuul会发生什么现象。我们创建一个pre类型的过滤器，并在该过滤器的run方法实现中抛出一个异常。
+	比如下面的实现，在run方法中调用的doSomething方法将抛出RuntimeException异常。
+
+	public class ThrowExceptionFilter extends ZuulFilter  {
+
+	    private static Logger log = LoggerFactory.getLogger(ThrowExceptionFilter.class);
+
+	    @Override
+	    public String filterType() {
+	        return "pre";
+	    }
+
+	    @Override
+	    public int filterOrder() {
+	        return 0;
+	    }
+
+	    @Override
+	    public boolean shouldFilter() {
+	        return true;
+	    }
+
+	    @Override
+	    public Object run() {
+	        log.info("This is a pre filter, it will throw a RuntimeException");
+	        doSomething();
+	        return null;
+	    }
+
+	    private void doSomething() {
+	        throw new RuntimeException("Exist some errors...");
+	    }
+	  
+	}
+	运行网关程序并访问某个路由请求，此时我们会发现：在API网关服务的控制台中输出了ThrowExceptionFilter的过滤逻辑中的日志信息，
+	但是并没有输出任何异常信息，同时发起的请求也没有获得任何响应结果。为什么会出现这样的情况呢？我们又该如何在过滤器中处理异常呢？
+
+解决方案一：严格的try-catch处理
+	回想一下，我们在上一节中介绍的所有核心过滤器，是否还记得有一个post过滤器SendErrorFilter是用来处理异常信息的？根据正常的处理流程，该过滤器会处理异常信息，
+	那么这里没有出现任何异常信息说明很有可能就是这个过滤器没有被执行。所以，我们不妨来详细看看SendErrorFilter的shouldFilter函数：
+
+	public boolean shouldFilter() {
+		RequestContext ctx = RequestContext.getCurrentContext();
+		return ctx.containsKey("error.status_code") && !ctx.getBoolean(SEND_ERROR_FILTER_RAN, false);
+	}
+	可以看到该方法的返回值中有一个重要的判断依据ctx.containsKey("error.status_code")，也就是说请求上下文中必须有error.status_code参数，
+	我们实现的ThrowExceptionFilter中并没有设置这个参数，所以自然不会进入SendErrorFilter过滤器的处理逻辑。那
+	么我们要如何用这个参数呢？我们可以看一下route类型的几个过滤器，由于这些过滤器会对外发起请求，
+	所以肯定会有异常需要处理，比如RibbonRoutingFilter的run方法实现如下：
+
+	public Object run() {
+		RequestContext context = RequestContext.getCurrentContext();
+		this.helper.addIgnoredHeaders();
+		try {
+			RibbonCommandContext commandContext = buildCommandContext(context);
+			ClientHttpResponse response = forward(commandContext);
+			setResponse(response);
+			return response;
+		}
+		catch (ZuulException ex) {
+			context.set(ERROR_STATUS_CODE, ex.nStatusCode);
+			context.set("error.message", ex.errorCause);
+			context.set("error.exception", ex);
+		}
+		catch (Exception ex) {
+			context.set("error.status_code", HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+			context.set("error.exception", ex);
+		}
+		return null;
+	}
+	可以看到，整个发起请求的逻辑都采用了try-catch块处理。在catch异常的处理逻辑中并没有做任何输出操作，而是往请求上下文中添加一些error相关的参数，主要有下面三个参数：
+
+	error.status_code：错误编码
+	error.exception：Exception异常对象
+	error.message：错误信息
+	其中，error.status_code参数就是SendErrorFilter过滤器用来判断是否需要执行的重要参数。分析到这里，实现异常处理的大致思路就开始明朗了，
+	我们可以参考RibbonRoutingFilter的实现对ThrowExceptionFilter的run方法做一些异常处理的改造，具体如下：
+
+	public Object run() {
+	    log.info("This is a pre filter, it will throw a RuntimeException");
+	    RequestContext ctx = RequestContext.getCurrentContext();
+	    try {
+	        doSomething();
+	    } catch (Exception e) {
+	        ctx.set("error.status_code", HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+	        ctx.set("error.exception", e);
+	    }
+	  	return null;
+	}
+		通过上面的改造之后，我们再尝试访问之前的接口，这个时候我们可以得到如下响应内容：
+
+		{
+		  "timestamp": 1481674980376,
+		  "status": 500,
+		  "error": "Internal Server Error",
+		  "exception": "java.lang.RuntimeException",
+		  "message": "Exist some errors..."
+		}
+	此时，我们的异常信息已经被SendErrorFilter过滤器正常处理并返回给客户端了，同时在网关的控制台中也输出了异常信息。从返回的响应信息中，
+	我们可以看到几个我们之前设置在请求上下文中的内容，它们的对应关系如下：
+
+	status：对应error.status_code参数的值
+	exception：对应error.exception参数中Exception的类型
+	message：对应error.exception参数中Exception的message信息。对于message的信息，我们在过滤器中还可以通过ctx.set("error.message", "自定义异常消息");
+	来定义更友好的错误信息。SendErrorFilter会优先取error.message来作为返回的message内容，如果没有的话才会使用Exception中的message信息
+	
+	
+	
+	解决方案二：ErrorFilter处理
+	通过上面的分析与实验，我们已经知道如何在过滤器中正确的处理异常，让错误信息能够顺利地流转到后续的SendErrorFilter过滤器来组织和输出。
+	但是，即使我们不断强调要在过滤器中使用try-catch来处理业务逻辑并往请求上下文添加异常信息，但是不可控的人为因素、意料之外的程序因素等，
+	依然会使得一些异常从过滤器中抛出，对于意外抛出的异常又会导致没有控制台输出也没有任何响应信息的情况出现，那么是否有什么好的方法来为这些异常做一个统一的处理呢？
+
+	这个时候，我们就可以用到error类型的过滤器了。由于在请求生命周期的pre、route、post三个阶段中有异常抛出的时候都会进入error阶段的处理，
+	所以我们可以通过创建一个error类型的过滤器来捕获这些异常信息，并根据这些异常信息在请求上下文中注入需要返回给客户端的错误描述，
+	这里我们可以直接沿用在try-catch处理异常信息时用的那些error参数，这样就可以让这些信息被SendErrorFilter捕获并组织成消息响应返回给客户端。
+	比如，下面的代码就实现了这里所描述的一个过滤器：
+
+	public class ErrorFilter extends ZuulFilter {
+
+	    Logger log = LoggerFactory.getLogger(ErrorFilter.class);
+
+	    @Override
+	    public String filterType() {
+	        return "error";
+	    }
+
+	    @Override
+	    public int filterOrder() {
+	        return 10;
+	    }
+
+	    @Override
+	    public boolean shouldFilter() {
+	        return true;
+	    }
+
+	    @Override
+	    public Object run() {
+	        RequestContext ctx = RequestContext.getCurrentContext();
+	        Throwable throwable = ctx.getThrowable();
+	        log.error("this is a ErrorFilter : {}", throwable.getCause().getMessage());
+	        ctx.set("error.status_code", HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+	        ctx.set("error.exception", throwable.getCause());
+	        return null;
+	    }
+
+}
+在将该过滤器加入到我们的API网关服务之后，我们可以尝试使用之前介绍try-catch处理时实现的ThrowExceptionFilter（不包含异常处理机制的代码），让该过滤器能够抛出异常。这个时候我们再通过API网关来访问服务接口。此时，我们就可以在控制台中看到ThrowExceptionFilter过滤器抛出的异常信息，并且请求响应中也能获得如下的错误信息内容，而不是什么信息都没有的情况了。
+
+{
+  "timestamp": 1481674993561,
+  "status": 500,
+  "error": "Internal Server Error",
+  "exception": "java.lang.RuntimeException",
+  "message": "Exist some errors..."
+}
+
+
+
+在目前的版本中，以及修改了统一异常的处理。
+SendErrorFilter 会默认输出错误信息
+
+zuul.SendErrorFilter.post.disable=true
+#禁用默认的SendErrorFilter，官方已经提供了开关配置，直接配置即可   默认开启
+
+1.4 禁用过滤器
+只需要在application.properties(或yml)中配置需要禁用的filter，格式为:zuul.[filter-name].[filter-type].disable=true。如:
+
+zuul.FormBodyWrapperFilter.pre.disable=true
+
+
+
+
+
+
+2. @EnableZuulServer VS. @EnableZuulProxy
+	Zuul为我们提供了两个主应用注解: @EnableZuulServer和@EnableZuulProxy，其中@EnableZuulProxy包含@EnableZuulServer的功能，
+	而且还加入了@EnableCircuitBreaker和@EnableDiscoveryClient。当我们需要运行一个没有代理功能的Zuul服务，或者有选择的开关部分代理功能时，
+	那么需要使用 @EnableZuulServer 替代 @EnableZuulProxy。 这时候我们可以添加任何 ZuulFilter类型实体类都会被自动加载，
+	这和上一篇使用@EnableZuulProxy是一样，但不会自动加载任何代理过滤器。
+
+2.1 @EnableZuulServer默认过滤器
+	当我们使用@EnableZuulServer时，默认所加载的过滤器有：
+
+2.1.1 PRE类型过滤器
+ServletDetectionFilter
+该过滤器是最先被执行的。其主要用来检查当前请求是通过Spring的DispatcherServlet处理运行的，还是通过ZuulServlet来处理运行的。判断结果会保存在isDispatcherServletRequest中，值类型为布尔型。
+
+FormBodyWrapperFilter
+该过滤器的目的是将符合要求的请求体包装成FormBodyRequestWrapper对象，以供后续处理使用。
+
+DebugFilter
+PRE类型过滤器。当请求参数中设置了debug参数时，该过滤器会将当前请求上下文中的RequestContext.setDebugRouting()和RequestContext.setDebugRequest()设置为true，这样后续的过滤器可以根据这两个参数信息定义一些debug信息，当生产环境出现问题时，我们就可以通过增加该参数让后台打印出debug信息，以帮助我们进行问题分析。对于请求中的debug参数的名称，我们可以通过zuul.debug.parameter进行自定义。
+
+2.1.2 ROUTE类型过滤器
+SendForwardFilter
+该过滤器只对请求上下文中存在forward.to(FilterConstants.FORWARD_TO_KEY)参数的请求进行处理。即处理之前我们路由规则中forward的本地跳转。
+
+2.1.3 POST类型过滤器
+SendResponseFilter
+该过滤器就是对代理请求所返回的响应进行封装，然后作为本次请求的相应发送回给请求者。
+
+2.1.4 Error类型过滤器
+SendErrorFilter
+该过滤器就是判断当前请求上下文中是否有异常信息(RequestContext.getThrowable()不为空)，如果有则默认转发到/error页面，我们也可以通过设置error.path来自定义错误页面。
+
+2.2 @EnableZuulProxy默认过滤器
+@EnableZuulProxy则在上面的基础上增加以下过滤器：
+
+2.2.1 PRE类型过滤器
+PreDecorationFilter
+该过滤器根据提供的RouteLocator确定路由到的地址，以及怎样去路由。该路由器也可为后端请求设置各种代理相关的header。
+
+2.2.2 ROUTE类型过滤器
+RibbonRoutingFilter
+该过滤器会针对上下文中存在serviceId(可以通过RequestContext.getCurrentContext().get(“serviceId”)获取)的请求进行处理，使用Ribbon、Hystrix和可插拔的HTTP客户端发送请求，并将服务实例的请求结果返回。也就是之前所说的只有当我们使用serviceId配置路由规则时Ribbon和Hystrix方才生效。
+
+SimpleHostRoutingFilter
+该过滤器检测到routeHost参数(可通过RequestContext.getRouteHost()获取)设置时，就会通过Apache HttpClient向指定的URL发送请求。此时，请求不会使用Hystrix命令进行包装，所以这类请求也就没有线程隔离和断路器保护。
+
+作者：CD826
+链接：https://www.jianshu.com/p/f786a11a2def
+來源：简书
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。

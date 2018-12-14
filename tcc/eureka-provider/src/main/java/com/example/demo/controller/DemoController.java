@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 
 import com.example.demo.model.DemoModel;
+import com.example.demo.model.TransactionEntity;
 import com.example.demo.service.DemoService;
 
 
@@ -22,9 +23,9 @@ public class DemoController {
 	
 	@PostMapping(value="/f01")
 	@ResponseBody
-	public String sendDemo(@RequestBody DemoModel demoModel) {
+	public String sendDemo(@RequestBody TransactionEntity<DemoModel> entity) {
 		
-		demoServiceImpl.record(null, demoModel);
+		demoServiceImpl.record(entity.getContext(), entity.getBody());
 		
 		return "ok";
 	}

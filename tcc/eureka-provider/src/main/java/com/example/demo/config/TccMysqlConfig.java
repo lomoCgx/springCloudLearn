@@ -4,8 +4,10 @@ import org.apache.commons.dbcp.BasicDataSource;
 import org.mengyun.tcctransaction.spring.repository.SpringJdbcTransactionRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.ImportResource;
 
 @Configuration
+@ImportResource(locations = "classpath:tcc-transaction.xml")
 public class TccMysqlConfig {
 
 	/**
@@ -16,7 +18,7 @@ public class TccMysqlConfig {
 	public BasicDataSource initDataSource() {
 		BasicDataSource dataSource = new BasicDataSource();
 		dataSource.setDriverClassName("com.mysql.jdbc.Driver");
-		dataSource.setUrl("jdbc:mysql://127.0.0.1:3306/test");
+		dataSource.setUrl("jdbc:mysql://127.0.0.1:3306/tcc?useUnicode=true&characterEncoding=UTF-8");
 		dataSource.setUsername("root");
 		dataSource.setPassword("cgx123");
 		return dataSource;

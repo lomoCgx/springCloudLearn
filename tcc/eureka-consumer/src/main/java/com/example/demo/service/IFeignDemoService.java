@@ -6,11 +6,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 
 import com.example.demo.model.FeignModel;
+import com.example.demo.model.TransactionEntity;
 import com.example.demo.service.impl.FeignDemoService;
 
 @FeignClient(name="eureka-provider",fallback=FeignDemoService.class)
 public interface IFeignDemoService {
 
 	@RequestMapping(value="/inner/c1/f01",method=RequestMethod.POST)
-	public String sendDemo(@RequestBody FeignModel feignModel);
+	public String sendDemo(@RequestBody TransactionEntity<FeignModel> entity);
 }

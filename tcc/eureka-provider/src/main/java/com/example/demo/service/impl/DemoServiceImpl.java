@@ -6,6 +6,7 @@ import org.mengyun.tcctransaction.context.MethodTransactionContextEditor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.example.demo.model.DemoModel;
 import com.example.demo.service.DemoService;
@@ -23,17 +24,26 @@ public class DemoServiceImpl implements DemoService{
 
 	Logger logger = LoggerFactory.getLogger(DemoServiceImpl.class);
 	
+	@Transactional
 	@Compensable(confirmMethod = "confirmRecord", cancelMethod = "cancelRecord", transactionContextEditor = MethodTransactionContextEditor.class)
 	public String record(TransactionContext transactionContext, DemoModel demoModel) {
 		
+		logger.info("id="+transactionContext.getXid());
+		
 		logger.info("record:"+demoModel.toString());
+		
+		int i=0;
+		int num = 5/i;
 		
 		return null;
 	}
+	
+	@Transactional
 	public void confirmRecord(TransactionContext transactionContext, DemoModel demoModel) {
 		logger.info("confirmRecord:"+demoModel.toString());
 	}
 	
+	@Transactional
 	public void cancelRecord(TransactionContext transactionContext, DemoModel demoModel) {
 		logger.info("cancelRecord:"+demoModel.toString());
 	}
